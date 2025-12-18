@@ -1,0 +1,38 @@
+{
+  "name": "xincheng/yii2-health",
+  "description": "Health check extension for Yii2 (HTTP + CLI + Kubernetes probes).",
+  "version": "1.0.0",
+  "type": "yii2-extension",
+  "license": "MIT",
+  "keywords": [
+    "yii2",
+    "health",
+    "healthcheck",
+    "kubernetes",
+    "readiness",
+    "liveness"
+  ],
+  "require": {
+    "php": ">=7.4",
+    "yiisoft/yii2": "~2.0.49",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Xincheng\\Health\\": "src/"
+    },
+    "classmap": [
+      "controllers",
+      "commands"
+    ]
+  },
+  "extra": {
+    "bootstrap": "Xincheng\\Health\\Bootstrap"
+  },
+  "suggest": {
+    "yiisoft/yii2-redis": "Enable Redis health checks",
+    "yiisoft/yii2-mongodb": "Enable MongoDB health checks",
+    "yiisoft/yii2-elasticsearch": "Enable Elasticsearch health checks",
+    "mikemadisonweb/yii2-rabbitmq": "Enable RabbitMQ health checks"
+  }
+}
