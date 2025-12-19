@@ -36,7 +36,7 @@ class QueueCheck extends BaseCheck
                 $db->open();
                 $db->createCommand('SELECT 1')->execute();
                 $meta['backend'] = 'db';
-                $meta['dsn'] = method_exists($db, 'getDsn') ? $db->dsn : null;
+                $meta['dsn'] = isset($db->dsn) ? $this->sanitizeDsn((string)$db->dsn) : null;
                 return new CheckResult($this->id, $name, CheckResult::STATUS_OK, $meta);
             }
         }
@@ -50,5 +50,14 @@ class QueueCheck extends BaseCheck
             'reason' => 'Unknown queue driver, unable to ping backend',
             'driver' => get_class($queue),
         ]);
+    }
+
+    protected function sanitizeDsn(string $dsn): string
+    {
+        $dsn = preg_replace('/password=[^&;]*/i', 'password=***', $dsn);
+        $dsn = preg_replace('/pwd=[^&;]*/i', 'pwd=***', $dsn);
+        $dsn = preg_replace('/:\\/\\/([^:]+):([^@]+)@/', '://$1:***@', $dsn);
+
+        return $dsn;
     }
 }

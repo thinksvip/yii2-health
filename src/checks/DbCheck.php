@@ -10,9 +10,11 @@ class DbCheck extends BaseCheck
 {
     protected function doCheck(): CheckResult
     {
-        $connection = $this->getComponent();
-
         $name = $this->name ?: $this->id;
+
+        $connection = $this->getComponent([
+            'attributes' => $this->resolveAttributes()
+        ]);
 
         if (!$connection instanceof Connection) {
             return new CheckResult($this->id, $name, CheckResult::STATUS_CRITICAL, [
@@ -20,7 +22,6 @@ class DbCheck extends BaseCheck
             ]);
         }
 
-        $connection->attributes = array_replace(is_array($connection->attributes) ? $connection->attributes : [], $this->resolveAttributes());
         $connection->open();
         $connection->createCommand('SELECT 1')->execute();
 
@@ -52,6 +53,13 @@ class DbCheck extends BaseCheck
 
     protected function sanitizeDsn(string $dsn): string
     {
-        return preg_replace('/password=[^;]*/i', 'password=***', $dsn);
+        // 处理 DSN 参数形式的密码: password=xxx, pwd=xxx
+        $dsn = preg_replace('/password=[^;]*/i', 'password=***', $dsn);
+        $dsn = preg_replace('/pwd=[^;]*/i', 'pwd=***', $dsn);
+
+        // 处理 URI 形式的密码: scheme://user:password@host
+        $dsn = preg_replace('/:\/\/([^:]+):([^@]+)@/', '://$1:***@', $dsn);
+
+        return $dsn;
     }
 }

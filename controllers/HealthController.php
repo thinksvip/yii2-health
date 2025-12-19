@@ -123,6 +123,7 @@ class HealthController extends Controller
 
         Yii::$app->response->format = Response::FORMAT_RAW;
         Yii::$app->response->statusCode = $component->getHttpStatusCode($report['status']);
+        Yii::$app->response->headers->set('Content-Type', 'text/plain; charset=UTF-8');
 
         return $report['status'];
     }

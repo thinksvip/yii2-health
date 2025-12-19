@@ -56,7 +56,18 @@ class HealthComponent extends Component
         $results = [];
 
         foreach ($checkObjects as $check) {
+            $checkStartTime = microtime(true);
             $results[] = $check->run();
+
+            // 记录单个检查的异常耗时告警（超过10秒）
+            $checkDuration = microtime(true) - $checkStartTime;
+            if ($checkDuration > 10) {
+                Yii::warning(sprintf(
+                    'Health check "%s" took %.2f seconds, which is unusually long',
+                    $check->getId(),
+                    $checkDuration
+                ), __METHOD__);
+            }
         }
 
         $status = $this->calculateStatus($results);
@@ -79,7 +90,7 @@ class HealthComponent extends Component
             $meta = $check['meta'] ?? [];
             $detail = $meta['reason'] ?? ($meta['error'] ?? '');
             if ($detail === '' && !empty($meta)) {
-                $detail = json_encode($meta, JSON_UNESCAPED_SLASHES);
+                $detail = json_encode($meta, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             }
             $lines[] = sprintf(
                 '- %s: %s (%sms)%s',
@@ -221,6 +232,11 @@ class HealthComponent extends Component
                         }
                         return $clone;
                     } catch (\Throwable $e) {
+                        Yii::warning(sprintf(
+                            'Failed to clone component "%s": %s. Using original instance.',
+                            $id,
+                            $e->getMessage()
+                        ), __METHOD__);
                         return $definition;
                     }
                 }
@@ -235,7 +251,12 @@ class HealthComponent extends Component
                             $component->$property = $value;
                         }
                     } catch (\Throwable $e) {
-                        // ignore cloning errors, use original component
+                        Yii::warning(sprintf(
+                            'Failed to clone component "%s": %s. Using original instance.',
+                            $id,
+                            $e->getMessage()
+                        ), __METHOD__);
+                        // use original component
                     }
                 }
                 return $component;

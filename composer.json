@@ -1,7 +1,6 @@
 {
   "name": "xincheng/yii2-health",
   "description": "Health check extension for Yii2 (HTTP + CLI + Kubernetes probes).",
-  "version": "1.0.0",
   "type": "yii2-extension",
   "license": "MIT",
   "keywords": [

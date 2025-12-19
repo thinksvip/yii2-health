@@ -27,7 +27,7 @@ class MongoDbCheck extends BaseCheck
 
         return new CheckResult($this->id, $name, CheckResult::STATUS_OK, [
             'database' => $database,
-            'dsn' => $connection->dsn,
+            'dsn' => $this->sanitizeDsn((string)$connection->dsn),
         ]);
     }
 
@@ -38,5 +38,14 @@ class MongoDbCheck extends BaseCheck
             'connectTimeoutMS' => $timeout,
             'socketTimeoutMS' => $timeout,
         ];
+    }
+
+    protected function sanitizeDsn(string $dsn): string
+    {
+        $dsn = preg_replace('/password=[^&;]*/i', 'password=***', $dsn);
+        $dsn = preg_replace('/pwd=[^&;]*/i', 'pwd=***', $dsn);
+        $dsn = preg_replace('/:\\/\\/([^:]+):([^@]+)@/', '://$1:***@', $dsn);
+
+        return $dsn;
     }
 }

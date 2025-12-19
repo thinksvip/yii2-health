@@ -31,6 +31,7 @@ class RabbitMqCheck extends BaseCheck
             ]);
         }
 
+        $connectionConfig = $this->normalizeConnectionConfig($connectionConfig);
         $connection = $this->openConnection($connectionConfig);
         try {
             $channel = $connection->channel();
@@ -55,7 +56,7 @@ class RabbitMqCheck extends BaseCheck
     protected function pickConnection(array $connections): ?array
     {
         foreach ($connections as $connection) {
-            if (!empty($connection['host'])) {
+            if (!empty($connection['host']) || !empty($connection['url'])) {
                 return $connection;
             }
         }
@@ -85,6 +86,29 @@ class RabbitMqCheck extends BaseCheck
         $heartbeat = isset($config['heartbeat']) ? (int)$config['heartbeat'] : 0;
         $channelRpcTimeout = isset($config['channel_rpc_timeout']) ? (float)$config['channel_rpc_timeout'] : 0.0;
 
+        if ($channelRpcTimeout > $readWriteTimeout) {
+            $channelRpcTimeout = $readWriteTimeout;
+        }
+
+        if ($type === AMQPSSLConnection::class) {
+            $sslOptions = is_array($sslContext) ? $sslContext : [];
+            return new AMQPSSLConnection(
+                $host,
+                $port,
+                $user,
+                $password,
+                $vhost,
+                $sslOptions,
+                [
+                    'connection_timeout' => $connectionTimeout,
+                    'read_write_timeout' => $readWriteTimeout,
+                    'keepalive' => $keepalive,
+                    'heartbeat' => $heartbeat,
+                    'channel_rpc_timeout' => $channelRpcTimeout,
+                ]
+            );
+        }
+
         return new $type(
             $host,
             $port,
@@ -102,6 +126,44 @@ class RabbitMqCheck extends BaseCheck
             $heartbeat,
             $channelRpcTimeout
         );
+    }
+
+    private function normalizeConnectionConfig(array $config): array
+    {
+        $url = $config['url'] ?? null;
+        if (is_string($url)) {
+            $url = trim($url);
+            if ($url !== '') {
+                $parts = parse_url($url);
+                if (is_array($parts)) {
+                    if (isset($parts['host'])) {
+                        $config['host'] = urldecode($parts['host']);
+                    }
+                    if (isset($parts['port'])) {
+                        $config['port'] = (int)$parts['port'];
+                    }
+                    if (isset($parts['user'])) {
+                        $config['user'] = urldecode($parts['user']);
+                    }
+                    if (isset($parts['pass'])) {
+                        $config['password'] = urldecode($parts['pass']);
+                    }
+                    if (isset($parts['path'])) {
+                        $vhost = urldecode(ltrim($parts['path'], '/'));
+                        $config['vhost'] = $vhost !== '' ? $vhost : ($config['vhost'] ?? '/');
+                    }
+                    if (isset($parts['query'])) {
+                        $query = [];
+                        parse_str($parts['query'], $query);
+                        if (is_array($query) && !empty($query)) {
+                            $config = array_merge($config, $query);
+                        }
+                    }
+                }
+            }
+        }
+
+        return $config;
     }
 
     private function shortTimeout($value): float
