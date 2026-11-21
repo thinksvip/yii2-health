@@ -13,8 +13,23 @@
   ],
   "require": {
     "php": ">=7.4",
-    "yiisoft/yii2": "~2.0.49",
+    "yiisoft/yii2": "~2.0.54",
     "ext-json": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.6 || ^12.5"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://asset-packagist.org",
+      "only": ["bower-asset/*"]
+    }
+  ],
+  "config": {
+    "allow-plugins": {
+      "yiisoft/yii2-composer": true
+    }
   },
   "autoload": {
     "psr-4": {

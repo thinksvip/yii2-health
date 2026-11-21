@@ -3,8 +3,10 @@
 namespace Xincheng\Health\controllers;
 
 use Yii;
+use yii\web\BadRequestHttpException;
 use yii\web\Controller;
 use yii\web\Response;
+use Xincheng\Health\CheckResult;
 use Xincheng\Health\HealthComponent;
 
 class HealthController extends Controller
@@ -15,6 +17,29 @@ class HealthController extends Controller
     public function getViewPath()
     {
         return dirname(__DIR__) . '/views';
+    }
+
+    public function runAction($id, $params = [])
+    {
+        try {
+            return parent::runAction($id, $params);
+        } catch (BadRequestHttpException $e) {
+            if ($id !== 'readyz' && $id !== 'healthz') {
+                throw $e;
+            }
+
+            // Some API hosts wrap exceptions in HTTP 200, which would pass a probe.
+            $response = Yii::$app->response;
+            $response->statusCode = 400;
+            if ($id === 'readyz') {
+                $response->format = Response::FORMAT_RAW;
+                $response->headers->set('Content-Type', 'text/plain; charset=UTF-8');
+                return 'not-ready';
+            }
+
+            $response->format = Response::FORMAT_JSON;
+            return ['status' => CheckResult::STATUS_CRITICAL, 'ready' => false, 'error' => $e->getMessage()];
+        }
     }
 
     /**
@@ -37,15 +62,7 @@ class HealthController extends Controller
     {
         /** @var HealthComponent $component */
         $component = Yii::$app->get('health');
-        $originalAutoDiscover = $component->autoDiscover;
-        if (!$full) {
-            $component->autoDiscover = false;
-        }
-        try {
-            $report = $checks ? $component->runChecksByIds($this->parseChecks($checks)) : $component->runChecks();
-        } finally {
-            $component->autoDiscover = $originalAutoDiscover;
-        }
+        $report = $this->runProbeChecks($component, $full, $checks);
 
         Yii::$app->response->format = Response::FORMAT_RAW;
         Yii::$app->response->statusCode = $component->getHttpStatusCode($report['status']);
@@ -63,15 +80,7 @@ class HealthController extends Controller
     {
         /** @var HealthComponent $component */
         $component = Yii::$app->get('health');
-        $originalAutoDiscover = $component->autoDiscover;
-        if (!$full) {
-            $component->autoDiscover = false;
-        }
-        try {
-            $report = $checks ? $component->runChecksByIds($this->parseChecks($checks)) : $component->runChecks();
-        } finally {
-            $component->autoDiscover = $originalAutoDiscover;
-        }
+        $report = $this->runProbeChecks($component, $full, $checks);
         $statusCode = $component->getHttpStatusCode($report['status']);
 
         Yii::$app->response->format = Response::FORMAT_JSON;
@@ -128,8 +137,29 @@ class HealthController extends Controller
         return $report['status'];
     }
 
-    private function parseChecks(string $checks): array
+    private function runProbeChecks(HealthComponent $component, int $full, ?string $checks): array
     {
-        return preg_split('/\\s*,\\s*/', trim($checks), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($checks !== null) {
+            $ids = preg_split('/\\s*,\\s*/', trim($checks), -1, PREG_SPLIT_NO_EMPTY);
+            if (!$ids) {
+                throw new BadRequestHttpException('Specify at least one check ID.');
+            }
+            $report = $component->runChecksByIds($ids);
+            $missing = array_diff($ids, array_column($report['checks'], 'id'));
+            if ($missing) {
+                throw new BadRequestHttpException('Unknown health checks: ' . implode(', ', $missing));
+            }
+            return $report;
+        }
+
+        $originalAutoDiscover = $component->autoDiscover;
+        if (!$full) {
+            $component->autoDiscover = false;
+        }
+        try {
+            return $component->runChecks();
+        } finally {
+            $component->autoDiscover = $originalAutoDiscover;
+        }
     }
 }

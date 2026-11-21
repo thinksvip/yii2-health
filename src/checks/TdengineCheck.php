@@ -74,24 +74,18 @@ class TdengineCheck extends BaseCheck
 
         $component = $this->getComponent();
 
-        if (is_object($component) && property_exists($component, 'host') && property_exists($component, 'port')) {
-            return [$component->host, (int)$component->port];
+        if (is_array($component)) {
+            $component = (object)$component;
         }
 
-        if (is_array($component)) {
-            $host = $component['host'] ?? null;
-            $port = $component['port'] ?? null;
+        if (is_object($component)) {
+            $host = $component->host ?? null;
+            $port = $component->port ?? null;
             if ($host && $port) {
                 return [$host, (int)$port];
             }
-            $dsn = $component['dsn'] ?? null;
-            if ($dsn && ($parsed = $this->parseDsn($dsn))) {
-                return $parsed;
-            }
-        }
-
-        if (is_object($component) && property_exists($component, 'dsn')) {
-            if ($parsed = $this->parseDsn($component->dsn)) {
+            $dsn = $component->dsn ?? null;
+            if (is_string($dsn) && ($parsed = $this->parseDsn($dsn))) {
                 return $parsed;
             }
         }

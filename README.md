@@ -14,8 +14,8 @@
 
 ## 环境要求
 
-- PHP `>= 7.4`
-- Yii2 `~2.0.49`
+- PHP `>= 7.4`，支持 PHP 8.5
+- Yii2 `~2.0.54`（2.0.54 起支持 PHP 8.5）
 
 ## 安装
 
@@ -41,6 +41,8 @@ php yii health/run --format=text
 - overall `critical`：返回非 0（用于 k8s `exec` readinessProbe）
 - 其它状态：返回 0
 
+宿主项目的 `yii` 入口需要用 `exit($application->run());` 将退出码传给进程。单独调用 `$application->run();` 会让故障探针也以 0 退出。
+
 ### HTTP（适合 Web / php-fpm 模型）
 
 业务接口：
@@ -52,9 +54,11 @@ Kubernetes 探针接口：
 - `GET /livez`：liveness（永远 200，返回 `ok`，不做外部依赖检查）
 - `GET /readyz`：readiness（200/503，返回 `ready`/`not-ready`）
   - 默认 `full=0`：不跑 `autoDiscover` 的检查（避免多 DB/慢依赖拖慢探针）
-  - 可选：`/readyz?full=1` 包含 `autoDiscover`；`/readyz?checks=db,redis` 只跑指定 checks
-- `GET /healthz`：k8s 风格 JSON（默认精简；`verbose=1`/失败时带 `checks[]`）
+  - `/readyz?full=1` 包含自动发现的检查。`/readyz?checks=db,redis` 只跑指定项，也可以点名已启用自动发现的数据库。
+- `GET /healthz`：k8s 风格 JSON（默认精简，`verbose=1` 或依赖故障时带 `checks[]`）
   - 示例：`/healthz?verbose=1&full=1`
+
+`/readyz` 和 `/healthz` 的 `checks` 参数为空、含有未知 ID 或参数类型错误时返回 HTTP 400，避免探针配置错误时误报就绪。
 
 ## Kubernetes 配置示例
 
@@ -136,6 +140,15 @@ readinessProbe:
 ```
 
 ## 测试
+
+在扩展源码目录运行：
+
+```bash
+composer install
+./vendor/bin/phpunit
+```
+
+在已安装本扩展和 PHPUnit 的业务项目中运行：
 
 ```bash
 ./vendor/bin/phpunit -c vendor/xincheng/yii2-health/phpunit.xml.dist

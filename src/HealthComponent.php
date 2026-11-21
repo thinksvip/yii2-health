@@ -46,7 +46,7 @@ class HealthComponent extends Component
         });
     }
 
-    public function runChecksFiltered(callable $predicate = null): array
+    public function runChecksFiltered(?callable $predicate = null): array
     {
         $startedAt = microtime(true);
         $checkObjects = $this->buildChecks();
@@ -111,24 +111,22 @@ class HealthComponent extends Component
 
     protected function bootstrapDefaults(): void
     {
-        if (!empty($this->checks)) {
-            return;
-        }
-
         $configFile = dirname(__DIR__) . '/config/health.php';
         if (!is_file($configFile)) {
             return;
         }
 
         $config = require $configFile;
-        if (isset($config['checks']) && is_array($config['checks'])) {
-            $this->checks = $config['checks'];
+        $defaults = $config['checks'] ?? [];
+        if (empty($this->checks)) {
+            $this->checks = $defaults;
+            return;
         }
-        if (isset($config['autoDiscover'])) {
-            $this->autoDiscover = $config['autoDiscover'];
-        }
-        if (isset($config['autoRegisterRoutes'])) {
-            $this->autoRegisterRoutes = $config['autoRegisterRoutes'];
+
+        foreach ($this->checks as $id => $definition) {
+            if (is_array($definition) && !isset($definition['class']) && !isset($definition['__class']) && isset($defaults[$id])) {
+                $this->checks[$id] = $definition + $defaults[$id];
+            }
         }
     }
 
@@ -155,8 +153,10 @@ class HealthComponent extends Component
             $definition['id'] = $id;
             $definition['componentId'] = $definition['componentId'] ?? $id;
             $definition['name'] = $definition['name'] ?? ucfirst($id);
-            $definition['componentResolver'] = $this->getComponentResolver();
-            $definition['componentExists'] = $this->getComponentExistsDetector();
+            if (!isset($definition['componentResolver'])) {
+                $definition['componentResolver'] = $this->getComponentResolver();
+                $definition['componentExists'] = $definition['componentExists'] ?? $this->getComponentExistsDetector();
+            }
         }
         unset($definition);
 
@@ -165,7 +165,7 @@ class HealthComponent extends Component
 
     protected function createCheck(string $id, array $definition): HealthCheckInterface
     {
-        if (!isset($definition['class'])) {
+        if (!isset($definition['class']) && !isset($definition['__class'])) {
             throw new InvalidConfigException("Health check {$id} is missing class definition");
         }
 
@@ -217,52 +217,33 @@ class HealthComponent extends Component
                 return null;
             }
 
-            $definitions = Yii::$app->getComponents(true);
-            if (array_key_exists($id, $definitions)) {
-                $definition = $definitions[$id];
-                if (is_array($definition)) {
-                    $definition = array_merge($definition, $overrides);
-                    return Yii::createObject($definition);
+            $definition = Yii::$app->getComponents(false)[$id] ?? Yii::$app->getComponents(true)[$id] ?? null;
+            if (is_string($definition)) {
+                $definition = ['class' => $definition];
+            }
+            if (is_array($definition) && isset($definition['class']) && !Yii::$container->has($definition['class'])) {
+                if (isset($overrides['attributes']) && is_a($definition['class'], Connection::class, true)) {
+                    $overrides['attributes'] += $definition['attributes'] ?? get_class_vars($definition['class'])['attributes'] ?? [];
                 }
-                if (is_object($definition)) {
-                    try {
-                        $clone = clone $definition;
-                        foreach ($overrides as $property => $value) {
-                            $clone->$property = $value;
-                        }
-                        return $clone;
-                    } catch (\Throwable $e) {
-                        Yii::warning(sprintf(
-                            'Failed to clone component "%s": %s. Using original instance.',
-                            $id,
-                            $e->getMessage()
-                        ), __METHOD__);
-                        return $definition;
-                    }
-                }
+                return Yii::createObject(array_replace($definition, $overrides));
             }
 
-            if (Yii::$app->has($id)) {
-                $component = Yii::$app->get($id);
-                if (is_object($component) && !empty($overrides)) {
-                    try {
-                        $component = clone $component;
-                        foreach ($overrides as $property => $value) {
-                            $component->$property = $value;
-                        }
-                    } catch (\Throwable $e) {
-                        Yii::warning(sprintf(
-                            'Failed to clone component "%s": %s. Using original instance.',
-                            $id,
-                            $e->getMessage()
-                        ), __METHOD__);
-                        // use original component
-                    }
-                }
+            // Let the service locator invoke factories, then isolate the probe
+            // from the instance the application (or the factory) may reuse.
+            $component = Yii::$app->get($id, false);
+            if (!is_object($component)) {
                 return $component;
             }
+            if ($component instanceof Connection && isset($overrides['attributes'])) {
+                $overrides['attributes'] += $component->attributes ?? [];
+            }
+            try {
+                $probe = clone $component;
+            } catch (\Throwable $e) {
+                throw new InvalidConfigException("Cannot isolate component \"$id\" for a health check", 0, $e);
+            }
 
-            return null;
+            return Yii::configure($probe, $overrides);
         };
     }
 
@@ -272,7 +253,7 @@ class HealthComponent extends Component
             return [];
         }
 
-        $components = Yii::$app->getComponents(true);
+        $components = array_replace(Yii::$app->getComponents(true), Yii::$app->getComponents(false));
         $auto = [];
         foreach ($components as $id => $definition) {
             if (isset($existing[$id]) || isset($auto[$id])) {

@@ -86,7 +86,8 @@ class RabbitMqCheck extends BaseCheck
         $heartbeat = isset($config['heartbeat']) ? (int)$config['heartbeat'] : 0;
         $channelRpcTimeout = isset($config['channel_rpc_timeout']) ? (float)$config['channel_rpc_timeout'] : 0.0;
 
-        if ($channelRpcTimeout > $readWriteTimeout) {
+        // php-amqplib uses zero to wait indefinitely for channel.open_ok.
+        if ($channelRpcTimeout <= 0 || $channelRpcTimeout > $readWriteTimeout) {
             $channelRpcTimeout = $readWriteTimeout;
         }
 
@@ -168,9 +169,7 @@ class RabbitMqCheck extends BaseCheck
 
     private function shortTimeout($value): float
     {
-        $timeout = $value !== null ? (float)$value : (float)$this->timeout;
-        $limit = $this->timeout ?: $timeout;
-
-        return max(1, min($timeout, $limit));
+        $limit = (float)$this->timeout > 0 ? (float)$this->timeout : 1.0;
+        return (float)$value > 0 ? min((float)$value, $limit) : $limit;
     }
 }

@@ -45,24 +45,35 @@ class KafkaCheck extends BaseCheck
             }
         }
 
-        // Fallback: simple TCP ping first broker
-        [$host, $port] = $this->splitHostPort($brokers[0]);
-        $address = sprintf('tcp://%s:%d', $host, $port);
-        $context = stream_context_create([
-            'socket' => ['connect_timeout' => $this->timeout],
-        ]);
-        $fp = @stream_socket_client($address, $errno, $errstr, $this->timeout, STREAM_CLIENT_CONNECT, $context);
-        if ($fp === false) {
-            return new CheckResult($this->id, $name, CheckResult::STATUS_CRITICAL, [
-                'error' => trim($errstr ?: $errno),
-                'brokers' => $brokers,
-            ]);
+        // A Kafka client can bootstrap through any of the configured brokers.
+        $deadline = microtime(true) + $this->timeout;
+        $brokerCount = count($brokers);
+        $error = 'No reachable brokers';
+        foreach ($brokers as $index => $broker) {
+            $remainingTime = $deadline - microtime(true);
+            if ($remainingTime <= 0) {
+                break;
+            }
+            $timeout = $remainingTime / ($brokerCount - $index);
+            $parts = parse_url('tcp://' . $broker);
+            if (!isset($parts['host'])) {
+                continue;
+            }
+            $address = sprintf('tcp://%s:%d', $parts['host'], $parts['port'] ?? 9092);
+            $fp = @stream_socket_client($address, $errno, $errstr, $timeout);
+            if ($fp !== false) {
+                fclose($fp);
+                return new CheckResult($this->id, $name, CheckResult::STATUS_OK, [
+                    'brokers' => $brokers,
+                    'metadata' => 'socket ok (rdkafka extension not installed)',
+                ]);
+            }
+            $error = trim($errstr ?: (string)$errno);
         }
-        fclose($fp);
 
-        return new CheckResult($this->id, $name, CheckResult::STATUS_OK, [
+        return new CheckResult($this->id, $name, CheckResult::STATUS_CRITICAL, [
             'brokers' => $brokers,
-            'metadata' => 'socket ok (rdkafka extension not installed)',
+            'error' => $error,
         ]);
     }
 
@@ -83,6 +94,7 @@ class KafkaCheck extends BaseCheck
         $component = $this->getComponent();
 
         if (is_object($component)) {
+            $properties = get_object_vars($component);
             if (method_exists($component, 'getBrokers')) {
                 try {
                     $brokers = $component->getBrokers();
@@ -94,14 +106,14 @@ class KafkaCheck extends BaseCheck
                     // ignore and continue
                 }
             }
-            if (property_exists($component, 'brokers')) {
-                $list = $this->normalizeBrokerList($component->brokers);
+            if (isset($properties['brokers'])) {
+                $list = $this->normalizeBrokerList($properties['brokers']);
                 if (!empty($list)) {
                     return $list;
                 }
             }
-            if (property_exists($component, 'bootstrapServers')) {
-                $list = $this->normalizeBrokerList($component->bootstrapServers);
+            if (isset($properties['bootstrapServers'])) {
+                $list = $this->normalizeBrokerList($properties['bootstrapServers']);
                 if (!empty($list)) {
                     return $list;
                 }
@@ -214,14 +226,5 @@ class KafkaCheck extends BaseCheck
         }
 
         return array_values(array_unique($normalized));
-    }
-
-    private function splitHostPort(string $broker): array
-    {
-        if (strpos($broker, ':') !== false) {
-            [$h, $p] = explode(':', $broker, 2);
-            return [$h, (int)$p];
-        }
-        return [$broker, 9092];
     }
 }

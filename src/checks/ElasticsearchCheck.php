@@ -25,19 +25,17 @@ class ElasticsearchCheck extends BaseCheck
             $connection->dataTimeout = $this->timeout;
         }
 
-        $cluster = $connection->get('_cluster/health', [], null, true);
-        $clusterStatus = is_array($cluster) && isset($cluster['status']) ? strtolower((string)$cluster['status']) : null;
-
-        if ($clusterStatus === 'red') {
-            $status = CheckResult::STATUS_CRITICAL;
-        } elseif ($clusterStatus === 'yellow') {
-            $status = CheckResult::STATUS_WARNING;
-        } else {
-            $status = CheckResult::STATUS_OK;
-        }
+        $cluster = $connection->get('_cluster/health');
+        $clusterStatus = is_string($cluster['status'] ?? null) ? strtolower($cluster['status']) : 'unknown';
+        $statuses = [
+            'green' => CheckResult::STATUS_OK,
+            'yellow' => CheckResult::STATUS_WARNING,
+            'red' => CheckResult::STATUS_CRITICAL,
+        ];
+        $status = $statuses[$clusterStatus] ?? CheckResult::STATUS_CRITICAL;
 
         return new CheckResult($this->id, $name, $status, [
-            'clusterStatus' => $clusterStatus ?? 'unknown',
+            'clusterStatus' => $clusterStatus,
             'activeNode' => $connection->activeNode,
             'nodes' => $connection->nodes,
         ]);

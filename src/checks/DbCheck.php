@@ -12,9 +12,7 @@ class DbCheck extends BaseCheck
     {
         $name = $this->name ?: $this->id;
 
-        $connection = $this->getComponent([
-            'attributes' => $this->resolveAttributes()
-        ]);
+        $connection = $this->getComponent(['attributes' => $this->resolveAttributes()]);
 
         if (!$connection instanceof Connection) {
             return new CheckResult($this->id, $name, CheckResult::STATUS_CRITICAL, [
@@ -22,23 +20,24 @@ class DbCheck extends BaseCheck
             ]);
         }
 
+        $wasActive = $connection->getIsActive();
         $connection->open();
-        $connection->createCommand('SELECT 1')->execute();
-
-        $server = $connection->dsn;
-        $meta = [
-            'dsn' => $this->sanitizeDsn($server),
-        ];
-
         try {
-            $meta['serverVersion'] = $connection->getSchema()->getServerVersion();
-        } catch (\Throwable $e) {
-            $meta['serverVersion'] = 'n/a';
+            $connection->createCommand('SELECT 1')->execute();
+            $meta = ['dsn' => $this->sanitizeDsn($connection->dsn)];
+
+            try {
+                $meta['serverVersion'] = $connection->getSchema()->getServerVersion();
+            } catch (\Throwable $e) {
+                $meta['serverVersion'] = 'n/a';
+            }
+
+            return new CheckResult($this->id, $name, CheckResult::STATUS_OK, $meta);
+        } finally {
+            if (!$wasActive) {
+                $connection->close();
+            }
         }
-
-        $connection->close();
-
-        return new CheckResult($this->id, $name, CheckResult::STATUS_OK, $meta);
     }
 
     protected function resolveAttributes(): array

@@ -3,6 +3,7 @@
 namespace Xincheng\Health;
 
 use yii\base\BootstrapInterface;
+use yii\base\InvalidConfigException;
 use yii\console\Application as ConsoleApplication;
 use yii\web\Application as WebApplication;
 use Xincheng\Health\commands\HealthController as ConsoleHealthController;
@@ -66,6 +67,30 @@ class Bootstrap implements BootstrapInterface
             'GET health' => 'health/index',
         ];
 
-        $app->getUrlManager()->addRules($rules, false);
+        $request = $app->getRequest();
+        try {
+            $isHealthRequest = isset($rules[$request->getMethod() . ' ' . $request->getPathInfo()]);
+        } catch (InvalidConfigException $e) {
+            // A web application may also be created before it has a request URI (e.g. in tests).
+            $isHealthRequest = false;
+        }
+
+        // UrlManager reads its rule cache during init(), before a probe action can run.
+        if ($isHealthRequest && !$app->has('urlManager', true)) {
+            $definition = $app->getComponents()['urlManager'];
+            if (is_string($definition) && class_exists($definition)) {
+                $definition = ['class' => $definition];
+            }
+            if (is_array($definition) && isset($definition['class'])) {
+                $definition['cache'] = false;
+                $app->set('urlManager', $definition);
+            }
+        }
+
+        $manager = $app->getUrlManager();
+        if ($isHealthRequest) {
+            $manager->cache = false;
+        }
+        $manager->addRules($rules, false);
     }
 }

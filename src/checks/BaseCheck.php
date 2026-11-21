@@ -39,11 +39,11 @@ abstract class BaseCheck implements HealthCheckInterface
             return $this->buildResult(CheckResult::STATUS_SKIPPED, ['reason' => 'disabled'], $startedAt, $name);
         }
 
-        if ($this->enabled === 'auto' && !$this->isAvailable()) {
-            return $this->buildResult(CheckResult::STATUS_SKIPPED, ['reason' => 'component not configured'], $startedAt, $name);
-        }
-
         try {
+            if ($this->enabled === 'auto' && !$this->isAvailable()) {
+                return $this->buildResult(CheckResult::STATUS_SKIPPED, ['reason' => 'component not configured'], $startedAt, $name);
+            }
+
             $result = $this->doCheck();
         } catch (\Throwable $e) {
             $result = new CheckResult($this->id, $name, CheckResult::STATUS_CRITICAL, [
@@ -85,11 +85,7 @@ abstract class BaseCheck implements HealthCheckInterface
     {
         $componentId = $this->componentId ?: $this->id;
         if ($this->componentResolver instanceof Closure) {
-            try {
-                return call_user_func($this->componentResolver, $componentId, $overrides);
-            } catch (\Throwable $e) {
-                return null;
-            }
+            return call_user_func($this->componentResolver, $componentId, $overrides);
         }
 
         return null;

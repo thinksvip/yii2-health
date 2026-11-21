@@ -1,0 +1,42 @@
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  phpunit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.5']
+        include:
+          - php: '7.4'
+            extensions: pdo_sqlite, sockets, mongodb-1.17.2
+          - php: '8.5'
+            extensions: pdo_sqlite
+            phpunit-options: --display-deprecations --fail-on-deprecation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ${{ matrix.extensions }}
+          coverage: none
+          ini-values: error_reporting=-1
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit --fail-on-risky --fail-on-warning ${{ matrix.phpunit-options }}
+      - name: Test from a consumer with optional drivers
+        if: matrix.php == '7.4'
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir health-consumer
+          cd health-consumer
+          composer init --no-interaction --name=integration/health-consumer \
+            --require='xincheng/yii2-health:@dev' --require-dev='phpunit/phpunit:^9.6' \
+            --require-dev='yiisoft/yii2-elasticsearch:~2.1.0' --require-dev='yiisoft/yii2-mongodb:~3.0.1' \
+            --require-dev='mikemadisonweb/yii2-rabbitmq:^2.4' --require-dev='yiisoft/yii2-redis:~2.0.20'
+          composer config repositories.assets '{"type":"composer","url":"https://asset-packagist.org","only":["bower-asset/*"]}'
+          composer config repositories.checkout path "$GITHUB_WORKSPACE"
+          composer config allow-plugins.yiisoft/yii2-composer true
+          composer install --no-interaction --prefer-dist
+          vendor/bin/phpunit -c vendor/xincheng/yii2-health/phpunit.xml.dist \
+            --do-not-cache-result --fail-on-warning --fail-on-risky --fail-on-skipped

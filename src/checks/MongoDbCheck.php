@@ -3,6 +3,7 @@
 namespace Xincheng\Health\checks;
 
 use MongoDB\Driver\Command;
+use yii\base\InvalidConfigException;
 use yii\mongodb\Connection;
 use Xincheng\Health\CheckResult;
 
@@ -19,9 +20,17 @@ class MongoDbCheck extends BaseCheck
             ]);
         }
 
-        $connection->options = array_merge($connection->options ?? [], $this->buildOptions());
+        foreach ($this->buildOptions() as $option => $limit) {
+            $configured = (int)($connection->options[$option] ?? 0);
+            $connection->options[$option] = $configured > 0 ? min($configured, $limit) : $limit;
+        }
         $connection->open();
-        $database = $connection->defaultDatabaseName ?: 'admin';
+        try {
+            $database = $connection->getDefaultDatabaseName() ?: 'admin';
+        } catch (InvalidConfigException $e) {
+            // The Yii driver throws for valid connection URIs without a database path.
+            $database = 'admin';
+        }
         $command = new Command(['ping' => 1]);
         $connection->manager->executeCommand($database, $command);
 
@@ -33,10 +42,11 @@ class MongoDbCheck extends BaseCheck
 
     protected function buildOptions(): array
     {
-        $timeout = (int)$this->timeout * 1000;
+        $timeout = max(1, (int)round($this->timeout * 1000));
         return [
             'connectTimeoutMS' => $timeout,
             'socketTimeoutMS' => $timeout,
+            'serverSelectionTimeoutMS' => $timeout,
         ];
     }
 
